@@ -29,7 +29,11 @@ const useTaskStore = create((set) => ({
    */
   createTask: async (projectId, data) => {
     const { task } = await taskService.createTask(projectId, data);
-    set((state) => ({ tasks: [task, ...state.tasks] }));
+    // Use the same duplicate-safe logic as socket events
+    set((state) => {
+      if (state.tasks.some((t) => t._id === task._id)) return state;
+      return { tasks: [task, ...state.tasks] };
+    });
     return task;
   },
 
