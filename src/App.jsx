@@ -10,13 +10,13 @@ import TaskBoardPage from './pages/TaskBoardPage';
 import './App.css';
 
 function App() {
-  const { restoreSession, isLoading } = useAuthStore();
+  const { restoreSession, isInitialized } = useAuthStore();
 
   useEffect(() => {
     restoreSession();
   }, [restoreSession]);
 
-  if (isLoading) {
+  if (!isInitialized) {
     return (
       <div className="loading-screen">
         <p>Loading...</p>

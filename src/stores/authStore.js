@@ -1,15 +1,21 @@
 import { create } from 'zustand';
 import * as authService from '../services/auth.service';
+import { getToken, setToken, removeToken } from '../utils/storage';
+import { connectSocket, disconnectSocket } from '../sockets/socket';
+import useProjectStore from './projectStore';
+import useTaskStore from './taskStore';
 
 /**
  * Authentication store.
- * Manages: user, token, loading, error states.
+ * Manages: user, token, loading, initialized, error states.
+ * Controls Socket.IO lifecycle based on auth state.
  */
-const useAuthStore = create((set, get) => ({
+const useAuthStore = create((set, _get) => ({
   user: null,
-  token: localStorage.getItem('token'),
+  token: getToken(),
   isAuthenticated: false,
-  isLoading: true, // true until initial auth check completes
+  isLoading: false,
+  isInitialized: false,
   error: null,
 
   /**
@@ -17,17 +23,18 @@ const useAuthStore = create((set, get) => ({
    * Checks stored token and fetches current user.
    */
   restoreSession: async () => {
-    const token = localStorage.getItem('token');
+    const token = getToken();
     if (!token) {
-      set({ isLoading: false, isAuthenticated: false });
+      set({ isInitialized: true, isAuthenticated: false });
       return;
     }
     try {
       const { user } = await authService.getMe();
-      set({ user, token, isAuthenticated: true, isLoading: false, error: null });
+      set({ user, token, isAuthenticated: true, isInitialized: true, error: null });
+      connectSocket(token);
     } catch {
-      localStorage.removeItem('token');
-      set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+      removeToken();
+      set({ user: null, token: null, isAuthenticated: false, isInitialized: true });
     }
   },
 
@@ -38,8 +45,9 @@ const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { user, token } = await authService.register(data);
-      localStorage.setItem('token', token);
-      set({ user, token, isAuthenticated: true, isLoading: false });
+      setToken(token);
+      set({ user, token, isAuthenticated: true, isLoading: false, error: null });
+      connectSocket(token);
     } catch (err) {
       const message = err.response?.data?.message || 'Registration failed';
       set({ error: message, isLoading: false });
@@ -54,8 +62,9 @@ const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { user, token } = await authService.login(data);
-      localStorage.setItem('token', token);
-      set({ user, token, isAuthenticated: true, isLoading: false });
+      setToken(token);
+      set({ user, token, isAuthenticated: true, isLoading: false, error: null });
+      connectSocket(token);
     } catch (err) {
       const message = err.response?.data?.message || 'Login failed';
       set({ error: message, isLoading: false });
@@ -64,27 +73,30 @@ const useAuthStore = create((set, get) => ({
   },
 
   /**
-   * Logout: clear token and state.
+   * Logout: clear token, state, disconnect socket, reset other stores.
    */
   logout: async () => {
+    // Attempt server logout (non-blocking)
     try {
       await authService.logout();
     } catch {
-      // Ignore errors — we're logging out regardless
+      // Ignore — local cleanup proceeds regardless
     }
-    localStorage.removeItem('token');
+
+    // Local cleanup always happens
+    removeToken();
+    disconnectSocket();
     set({ user: null, token: null, isAuthenticated: false, error: null });
+
+    // Reset other stores to prevent stale data
+    useProjectStore.getState().reset();
+    useTaskStore.getState().reset();
   },
 
   /**
    * Clear error state.
    */
   clearError: () => set({ error: null }),
-
-  /**
-   * Get current token (for socket auth).
-   */
-  getToken: () => get().token,
 }));
 
 export default useAuthStore;

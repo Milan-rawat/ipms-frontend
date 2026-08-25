@@ -1,6 +1,5 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import useAuthStore from '../../stores/authStore';
-import { disconnectSocket } from '../../sockets/socket';
 
 /**
  * Main application layout for authenticated pages.
@@ -11,9 +10,8 @@ function AppLayout() {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    disconnectSocket();
     await logout();
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   return (
@@ -25,7 +23,7 @@ function AppLayout() {
           </Link>
           <div className="app-nav-right">
             <span className="user-name">{user?.name}</span>
-            <button onClick={handleLogout} className="btn-logout">
+            <button onClick={handleLogout} className="btn btn-logout" type="button">
               Logout
             </button>
           </div>
