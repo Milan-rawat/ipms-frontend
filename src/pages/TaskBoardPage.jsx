@@ -1,17 +1,19 @@
-import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useEffect, useState, useCallback } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import useTaskStore from '../stores/taskStore';
 import useProjectStore from '../stores/projectStore';
 import useAuthStore from '../stores/authStore';
 import TaskColumn from '../components/tasks/TaskColumn';
 import TaskForm from '../components/tasks/TaskForm';
 import Modal from '../components/common/Modal';
-import { TASK_STATUS, TASK_STATUSES } from '../utils/constants';
+import { TASK_STATUSES } from '../utils/constants';
+import { joinProjectRoom, leaveProjectRoom, getSocket } from '../sockets/socket';
 
 function TaskBoardPage() {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { currentProject, fetchProject, clearCurrentProject } = useProjectStore();
+  const { currentProject, fetchProject, clearCurrentProject, removedFromProject, clearRemovedFlag } = useProjectStore();
   const { tasks, isLoading, error, fetchTasks, createTask, updateTask, deleteTask, reset } = useTaskStore();
 
   const [showCreate, setShowCreate] = useState(false);
@@ -23,14 +25,40 @@ function TaskBoardPage() {
   const isAdmin = currentProject?.owner?._id === user?._id;
   const members = currentProject?.members || [];
 
+  // Load project + tasks, join socket room
   useEffect(() => {
     fetchProject(projectId);
     fetchTasks(projectId);
+    joinProjectRoom(projectId);
+
     return () => {
+      leaveProjectRoom(projectId);
       clearCurrentProject();
       reset();
     };
   }, [projectId, fetchProject, fetchTasks, clearCurrentProject, reset]);
+
+  // Reconnect handler: refresh state from API
+  useEffect(() => {
+    const sock = getSocket();
+    if (!sock) return;
+
+    const handleReconnect = () => {
+      fetchProject(projectId);
+      fetchTasks(projectId);
+    };
+
+    sock.on('connect', handleReconnect);
+    return () => { sock.off('connect', handleReconnect); };
+  }, [projectId, fetchProject, fetchTasks]);
+
+  // Handle being removed from this project
+  useEffect(() => {
+    if (removedFromProject === projectId) {
+      clearRemovedFlag();
+      navigate('/projects', { replace: true });
+    }
+  }, [removedFromProject, projectId, clearRemovedFlag, navigate]);
 
   const handleCreate = async (data) => {
     setOpLoading(true);
