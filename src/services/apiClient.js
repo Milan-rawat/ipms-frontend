@@ -1,5 +1,6 @@
 import axios from 'axios';
 import env from '../config/env';
+import { getToken, removeToken } from '../utils/storage';
 
 /**
  * Centralized Axios instance.
@@ -16,7 +17,7 @@ const apiClient = axios.create({
  * Request interceptor: attach JWT token if available.
  */
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -25,13 +26,13 @@ apiClient.interceptors.request.use((config) => {
 
 /**
  * Response interceptor: handle 401 globally.
+ * Clears token on auth failure. The auth store reacts to missing token.
  */
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      // Auth store will handle redirect via state change
+      removeToken();
     }
     return Promise.reject(error);
   },
