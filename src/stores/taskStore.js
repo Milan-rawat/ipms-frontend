@@ -4,9 +4,9 @@ import * as taskService from '../services/task.service';
 /**
  * Task store.
  * Manages: tasks for current project, loading/error states.
- * Supports real-time updates via socket events.
+ * Provides real-time event handlers for Phase 3E.
  */
-const useTaskStore = create((set, _get) => ({
+const useTaskStore = create((set) => ({
   tasks: [],
   isLoading: false,
   error: null,
@@ -54,23 +54,20 @@ const useTaskStore = create((set, _get) => ({
     }));
   },
 
-  // --- Real-time event handlers (called by socket listeners) ---
+  // --- Real-time event handlers (called by socket listeners in Phase 3E) ---
 
   /**
-   * Handle task:created socket event.
-   * Prevents duplicates by checking task ID.
+   * Add a task to state. Prevents duplicates by ID.
    */
   applyTaskCreated: (task) => {
     set((state) => {
-      const exists = state.tasks.some((t) => t._id === task._id);
-      if (exists) return state;
+      if (state.tasks.some((t) => t._id === task._id)) return state;
       return { tasks: [task, ...state.tasks] };
     });
   },
 
   /**
-   * Handle task:updated socket event.
-   * Replaces existing task with updated version.
+   * Replace an existing task with updated version.
    */
   applyTaskUpdated: (task) => {
     set((state) => ({
@@ -79,8 +76,7 @@ const useTaskStore = create((set, _get) => ({
   },
 
   /**
-   * Handle task:deleted socket event.
-   * Removes task by ID.
+   * Remove a task by ID.
    */
   applyTaskDeleted: (taskId) => {
     set((state) => ({
