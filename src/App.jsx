@@ -6,6 +6,7 @@ import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProjectsPage from './pages/ProjectsPage';
+import ProjectDetailPage from './pages/ProjectDetailPage';
 import TaskBoardPage from './pages/TaskBoardPage';
 import './App.css';
 
@@ -40,7 +41,8 @@ function App() {
           }
         >
           <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/projects/:projectId" element={<TaskBoardPage />} />
+          <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+          <Route path="/projects/:projectId/tasks" element={<TaskBoardPage />} />
         </Route>
 
         {/* Default redirect */}
