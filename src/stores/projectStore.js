@@ -94,10 +94,64 @@ const useProjectStore = create((set) => ({
    */
   clearCurrentProject: () => set({ currentProject: null }),
 
+  // --- Real-time event handlers ---
+
+  /**
+   * Handle member:added socket event.
+   * Updates currentProject members if viewing that project.
+   */
+  applyMemberAdded: (user) => {
+    set((state) => {
+      if (!state.currentProject) return state;
+      const exists = state.currentProject.members.some((m) => m.user._id === user._id);
+      if (exists) return state;
+      return {
+        currentProject: {
+          ...state.currentProject,
+          members: [...state.currentProject.members, { user, role: 'member' }],
+        },
+      };
+    });
+  },
+
+  /**
+   * Handle member:removed socket event (another user removed).
+   * Updates currentProject members.
+   */
+  applyMemberRemoved: (userId) => {
+    set((state) => {
+      if (!state.currentProject) return state;
+      return {
+        currentProject: {
+          ...state.currentProject,
+          members: state.currentProject.members.filter((m) => m.user._id !== userId),
+        },
+      };
+    });
+  },
+
+  /**
+   * Handle being removed from a project.
+   * Clears current project and removes from projects list.
+   * Sets a removal flag for UI navigation.
+   */
+  handleRemovedFromProject: (projectId) => {
+    set((state) => ({
+      currentProject: state.currentProject?._id === projectId ? null : state.currentProject,
+      projects: state.projects.filter((p) => p._id !== projectId),
+      removedFromProject: projectId,
+    }));
+  },
+
+  /**
+   * Clear the removal flag after navigation.
+   */
+  clearRemovedFlag: () => set({ removedFromProject: null }),
+
   /**
    * Reset store on logout.
    */
-  reset: () => set({ projects: [], currentProject: null, isLoading: false, error: null }),
+  reset: () => set({ projects: [], currentProject: null, isLoading: false, error: null, removedFromProject: null }),
 }));
 
 export default useProjectStore;

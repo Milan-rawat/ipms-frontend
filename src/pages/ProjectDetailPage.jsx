@@ -5,12 +5,13 @@ import useAuthStore from '../stores/authStore';
 import MemberList from '../components/projects/MemberList';
 import AddMemberForm from '../components/projects/AddMemberForm';
 import Modal from '../components/common/Modal';
+import { joinProjectRoom, leaveProjectRoom } from '../sockets/socket';
 
 function ProjectDetailPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { currentProject, isLoading, error, fetchProject, updateProject, deleteProject, addMember, removeMember, clearCurrentProject } = useProjectStore();
+  const { currentProject, isLoading, error, fetchProject, updateProject, deleteProject, addMember, removeMember, clearCurrentProject, removedFromProject, clearRemovedFlag } = useProjectStore();
 
   const [showAddMember, setShowAddMember] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -24,8 +25,20 @@ function ProjectDetailPage() {
 
   useEffect(() => {
     fetchProject(projectId);
-    return () => clearCurrentProject();
+    joinProjectRoom(projectId);
+    return () => {
+      leaveProjectRoom(projectId);
+      clearCurrentProject();
+    };
   }, [projectId, fetchProject, clearCurrentProject]);
+
+  // Handle being removed from this project
+  useEffect(() => {
+    if (removedFromProject === projectId) {
+      clearRemovedFlag();
+      navigate('/projects', { replace: true });
+    }
+  }, [removedFromProject, projectId, clearRemovedFlag, navigate]);
 
   useEffect(() => {
     if (currentProject) {

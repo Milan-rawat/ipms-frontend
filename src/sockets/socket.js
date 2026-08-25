@@ -1,27 +1,42 @@
 import { io } from 'socket.io-client';
 import env from '../config/env';
 import useTaskStore from '../stores/taskStore';
+import useProjectStore from '../stores/projectStore';
+import useAuthStore from '../stores/authStore';
 
 let socket = null;
+let currentRoom = null;
 
 /**
  * Initialize Socket.IO connection with JWT authentication.
+ * Registers all event listeners once.
  * @param {string} token - JWT access token
  * @returns {import('socket.io-client').Socket}
  */
 export function connectSocket(token) {
   if (socket?.connected) return socket;
 
+  // Disconnect stale socket if exists
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+  }
+
   socket = io(env.socketUrl, {
     auth: { token },
     transports: ['websocket'],
     reconnection: true,
-    reconnectionAttempts: 10,
+    reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
   });
 
   socket.on('connect', () => {
     console.log('[Socket] Connected:', socket.id);
+    // Rejoin current room after reconnect
+    if (currentRoom) {
+      socket.emit('project:join', { projectId: currentRoom });
+    }
   });
 
   socket.on('disconnect', (reason) => {
@@ -45,21 +60,38 @@ export function connectSocket(token) {
     useTaskStore.getState().applyTaskDeleted(data.taskId);
   });
 
+  // --- Member event listeners ---
+  socket.on('member:added', (data) => {
+    useProjectStore.getState().applyMemberAdded(data.user);
+  });
+
+  socket.on('member:removed', (data) => {
+    const authUser = useAuthStore.getState().user;
+    if (authUser && data.userId === authUser._id) {
+      // Current user was removed — clear state and leave
+      handleSelfRemoved(data.projectId);
+    } else {
+      useProjectStore.getState().applyMemberRemoved(data.userId);
+    }
+  });
+
   return socket;
 }
 
 /**
- * Disconnect Socket.IO.
+ * Disconnect Socket.IO and reset room state.
  */
 export function disconnectSocket() {
   if (socket) {
+    socket.removeAllListeners();
     socket.disconnect();
     socket = null;
   }
+  currentRoom = null;
 }
 
 /**
- * Join a project room.
+ * Join a project room. Leaves previous room first.
  * @param {string} projectId
  * @returns {Promise<{success: boolean, message?: string}>}
  */
@@ -69,8 +101,17 @@ export function joinProjectRoom(projectId) {
       resolve({ success: false, message: 'Not connected' });
       return;
     }
+
+    // Leave previous room if different
+    if (currentRoom && currentRoom !== projectId) {
+      socket.emit('project:leave', { projectId: currentRoom });
+    }
+
     socket.emit('project:join', { projectId }, (response) => {
-      resolve(response);
+      if (response?.success) {
+        currentRoom = projectId;
+      }
+      resolve(response || { success: false, message: 'No response' });
     });
   });
 }
@@ -81,15 +122,18 @@ export function joinProjectRoom(projectId) {
  */
 export function leaveProjectRoom(projectId) {
   if (!socket?.connected) return;
-  socket.emit('project:leave', { projectId });
+  if (currentRoom === projectId) {
+    socket.emit('project:leave', { projectId });
+    currentRoom = null;
+  }
 }
 
 /**
- * Get current socket instance.
- * @returns {import('socket.io-client').Socket|null}
+ * Get the current joined room project ID.
+ * @returns {string|null}
  */
-export function getSocket() {
-  return socket;
+export function getCurrentRoom() {
+  return currentRoom;
 }
 
 /**
@@ -98,4 +142,22 @@ export function getSocket() {
  */
 export function isSocketConnected() {
   return socket?.connected ?? false;
+}
+
+/**
+ * Get the raw socket instance (for event listeners in components).
+ * @returns {import('socket.io-client').Socket|null}
+ */
+export function getSocket() {
+  return socket;
+}
+
+/**
+ * Handle the scenario where the current user is removed from the project.
+ * Clears project/task state and signals navigation.
+ */
+function handleSelfRemoved(projectId) {
+  currentRoom = null;
+  useProjectStore.getState().handleRemovedFromProject(projectId);
+  useTaskStore.getState().reset();
 }
