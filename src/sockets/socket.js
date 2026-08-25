@@ -6,6 +6,7 @@ import useAuthStore from '../stores/authStore';
 
 let socket = null;
 let currentRoom = null;
+let pendingRoom = null;
 
 /**
  * Initialize Socket.IO connection with JWT authentication.
@@ -33,9 +34,16 @@ export function connectSocket(token) {
 
   socket.on('connect', () => {
     console.log('[Socket] Connected:', socket.id);
-    // Rejoin current room after reconnect
-    if (currentRoom) {
-      socket.emit('project:join', { projectId: currentRoom });
+
+    // Join pending room (initial connection or reconnection)
+    const roomToJoin = pendingRoom || currentRoom;
+    if (roomToJoin) {
+      socket.emit('project:join', { projectId: roomToJoin }, (response) => {
+        if (response?.success) {
+          currentRoom = roomToJoin;
+          pendingRoom = null;
+        }
+      });
     }
   });
 
@@ -68,7 +76,6 @@ export function connectSocket(token) {
   socket.on('member:removed', (data) => {
     const authUser = useAuthStore.getState().user;
     if (authUser && data.userId === authUser._id) {
-      // Current user was removed — clear state and leave
       handleSelfRemoved(data.projectId);
     } else {
       useProjectStore.getState().applyMemberRemoved(data.userId);
@@ -88,28 +95,35 @@ export function disconnectSocket() {
     socket = null;
   }
   currentRoom = null;
+  pendingRoom = null;
 }
 
 /**
  * Join a project room. Leaves previous room first.
+ * If socket is not yet connected, stores the room as pending
+ * and joins automatically when connection completes.
  * @param {string} projectId
  * @returns {Promise<{success: boolean, message?: string}>}
  */
 export function joinProjectRoom(projectId) {
   return new Promise((resolve) => {
-    if (!socket?.connected) {
-      resolve({ success: false, message: 'Not connected' });
-      return;
+    // Leave previous room if different
+    if (currentRoom && currentRoom !== projectId && socket?.connected) {
+      socket.emit('project:leave', { projectId: currentRoom });
+      currentRoom = null;
     }
 
-    // Leave previous room if different
-    if (currentRoom && currentRoom !== projectId) {
-      socket.emit('project:leave', { projectId: currentRoom });
+    // If socket not connected yet, store as pending
+    if (!socket?.connected) {
+      pendingRoom = projectId;
+      resolve({ success: true, message: 'Pending connection' });
+      return;
     }
 
     socket.emit('project:join', { projectId }, (response) => {
       if (response?.success) {
         currentRoom = projectId;
+        pendingRoom = null;
       }
       resolve(response || { success: false, message: 'No response' });
     });
@@ -121,6 +135,9 @@ export function joinProjectRoom(projectId) {
  * @param {string} projectId
  */
 export function leaveProjectRoom(projectId) {
+  if (pendingRoom === projectId) {
+    pendingRoom = null;
+  }
   if (!socket?.connected) return;
   if (currentRoom === projectId) {
     socket.emit('project:leave', { projectId });
@@ -145,7 +162,7 @@ export function isSocketConnected() {
 }
 
 /**
- * Get the raw socket instance (for event listeners in components).
+ * Get the raw socket instance (for reconnect listeners in components).
  * @returns {import('socket.io-client').Socket|null}
  */
 export function getSocket() {
@@ -154,10 +171,10 @@ export function getSocket() {
 
 /**
  * Handle the scenario where the current user is removed from the project.
- * Clears project/task state and signals navigation.
  */
 function handleSelfRemoved(projectId) {
   currentRoom = null;
+  pendingRoom = null;
   useProjectStore.getState().handleRemovedFromProject(projectId);
   useTaskStore.getState().reset();
 }
